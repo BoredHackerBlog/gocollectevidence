@@ -17,7 +17,7 @@ Evidence zip file and registry dump (if -savehklm is used) will need to be delet
 2. -debug to see debug messages (optional)
 3. -evidencezip filename.zip to rename the evidence zip file, default is evidence.zip (optional)
 4. for sftp: -sftpserver, -sftpuser, -sftppass, -sftpkey, -sftpport (optional)
-5. -savehklm this executes reg save command to dump sam, software, security, and system to C:\Windows\Temp\
+5. -savehklm this executes reg save command to dump sam, software, security, and system to C:\Windows\Temp\ (optional)
 
 # Files/Folders collected
 ```
