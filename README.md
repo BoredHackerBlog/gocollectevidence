@@ -3,15 +3,21 @@ Evidence collector (similar to cylr but worse) written in golang
 
 (You can find cylr here: https://github.com/orlikoski/CyLR)
 
+Evidence zip file and registry dump (if -savehklm is used) will need to be deleted manually by you after evidence is uploaded or copied.
+
 # Compiling
 1. You need Golang installed
-2. Get the Registry package golang.org/x/sys/windows/registry run `go get golang.org/x/sys/windows/registry`
-3. Run `go build` in the repo directory to get an executable
+2. Run `go get golang.org/x/sys/windows/registry`
+3. Run `go get golang.org/x/crypto/ssh`
+4. Run `github.com/pkg/sftp`
+5. Run `go build` in the repo directory to get an executable
 
 # Args
 1. -h, to get help
 2. -debug to see debug messages (optional)
 3. -evidencezip filename.zip to rename the evidence zip file, default is evidence.zip (optional)
+4. for sftp: -sftpserver, -sftpuser, -sftppass, -sftpkey, -sftpport (optional)
+5. -savehklm this executes reg save command to dump sam, software, security, and system to C:\Windows\Temp\
 
 # Files/Folders collected
 ```
