@@ -7,10 +7,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -43,6 +47,35 @@ func appendFiles(filename string, zipw *zip.Writer) error {
 }
 
 func main() {
+
+	HOSTNAME := os.Getenv("COMPUTERNAME")
+	DOMAINNAME := os.Getenv("USERDOMAIN")
+
+	defaultevidencezip := fmt.Sprintf("%s_%s.zip", HOSTNAME, DOMAINNAME)
+
+	var evidencezip string
+	flag.StringVar(&evidencezip, "evidencezip", defaultevidencezip, "Evidence Zip file")
+
+	flag.BoolVar(&debug, "debug", false, "Turn on debugging messages")
+
+	var sftpserver string
+	var sftpport string
+	var sftpuser string
+	var sftppass string
+	var sftpkey string
+	flag.StringVar(&sftpserver, "sftpserver", "", "SFTP Server")
+	flag.StringVar(&sftpport, "sftpport", "22", "SFTP Port")
+	flag.StringVar(&sftpuser, "sftpuser", "", "SFTP Username")
+	flag.StringVar(&sftppass, "sftppass", "", "SFTP Password")
+	flag.StringVar(&sftpkey, "sftpkey", "", "SFTP Key")
+
+	var savehklm bool
+	flag.BoolVar(&savehklm, "savehklm", false, "run 'reg save' to save & collect HKLM SAM, SYSTEM, SECURITY, SOFTWARE. Saved to C:\\Windows\\Temp\\")
+
+	flag.Parse()
+
+	debugMsg(fmt.Sprintf("Evidence file name: %s", evidencezip))
+
 	SYSTEMROOT := os.Getenv("SYSTEMROOT")
 	PROGRAMDATA := os.Getenv("PROGRAMDATA")
 	SystemDrive := os.Getenv("SystemDrive")
@@ -52,27 +85,57 @@ func main() {
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\Tasks", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\Prefetch", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\inf\\setupapi.dev.log", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\Appcompat\\Programs", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\drivers\\etc\\hosts", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\sru", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\winevt\\logs", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\Tasks", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\LogFiles\\W3SVC1", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SAM", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SYSTEM", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SOFTWARE", SYSTEMROOT))
-	///evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SECURITY", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SAM.LOG1", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SYSTEM.LOG1", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SOFTWARE.LOG1", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SECURITY.LOG1", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SAM.LOG2", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SYSTEM.LOG2", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SOFTWARE.LOG2", SYSTEMROOT))
-	//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\System32\\config\\SECURITY.LOG2", SYSTEMROOT))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\Microsoft\\Search\\Data\\Applications\\Windows", PROGRAMDATA))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\Microsoft\\Windows\\Start Menu\\Programs\\Startup", PROGRAMDATA))
 	evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\$Recycle.Bin", SystemDrive))
+
+	if savehklm {
+		//dump SAM, SECURITY, SYSTEM, SOFTWARE
+		//reg save HKLM\SAM C:\Windows\Temp\sam
+		//HKLM\SECURITY SYSTEM SOFTWARE
+		samfile := "C:\\Windows\\Temp\\sam"
+		securityfile := "C:\\Windows\\Temp\\security"
+		systemfile := "C:\\Windows\\Temp\\system"
+		softwarefile := "C:\\Windows\\Temp\\software"
+
+		savecmd := exec.Command("reg", "save", "HKLM\\SAM", samfile, "/y")
+		err := savecmd.Run()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			evidencelocationlist = append(evidencelocationlist, samfile)
+		}
+
+		savecmd = exec.Command("reg", "save", "HKLM\\SECURITY", securityfile, "/y")
+		err = savecmd.Run()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			evidencelocationlist = append(evidencelocationlist, securityfile)
+		}
+
+		savecmd = exec.Command("reg", "save", "HKLM\\SYSTEM", systemfile, "/y")
+		err = savecmd.Run()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			evidencelocationlist = append(evidencelocationlist, systemfile)
+		}
+
+		savecmd = exec.Command("reg", "save", "HKLM\\SOFTWARE", softwarefile, "/y")
+		err = savecmd.Run()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			evidencelocationlist = append(evidencelocationlist, softwarefile)
+		}
+
+	}
 
 	//https://github.com/Velocidex/evtx/blob/master/cmd/extract_windows.go
 	//Go to Registry, get profile paths, append to list
@@ -104,12 +167,6 @@ func main() {
 
 	for _, userprofiledir := range userprofiledirs {
 		evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Roaming\\Microsoft\\Windows\\Recent", userprofiledir))
-		//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\NTUSER.DAT", userprofiledir))
-		//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\NTUSER.DAT.LOG1", userprofiledir))
-		//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\NTUSER.DAT.LOG2", userprofiledir))
-		//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", userprofiledir))
-		//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat.LOG1", userprofiledir))
-		//evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat.LOG2", userprofiledir))
 		evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Local\\Microsoft\\Windows\\Explorer", userprofiledir))
 		evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History", userprofiledir))
 		evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Local\\Microsoft\\Windows\\WebCache\\", userprofiledir))
@@ -118,15 +175,6 @@ func main() {
 		evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadline\\ConsoleHost_history.txt", userprofiledir))
 		evidencelocationlist = append(evidencelocationlist, fmt.Sprintf("%s\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\", userprofiledir))
 	}
-
-	var evidencezip string
-	flag.StringVar(&evidencezip, "evidencezip", "evidence.zip", "Evidence Zip file")
-
-	flag.BoolVar(&debug, "debug", false, "Turn on debugging messages")
-
-	flag.Parse()
-
-	debugMsg(fmt.Sprintf("Evidence file name: %s", evidencezip))
 
 	//get list of files from disk
 	debugMsg("Finding all the files")
@@ -159,7 +207,7 @@ func main() {
 	}
 
 	//create zip file on disk
-	flagmode := os.O_WRONLY | os.O_CREATE
+	flagmode := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	evidencezipfile, err := os.OpenFile(evidencezip, flagmode, 0777)
 	if err != nil {
 		debugMsg("Can't create a file")
@@ -169,7 +217,6 @@ func main() {
 	//https://www.golangprograms.com/go-program-to-compress-list-of-files-into-zip.html
 	//zipwriter
 	evidencezipwriter := zip.NewWriter(evidencezipfile)
-	defer evidencezipwriter.Close()
 
 	//add files to zip
 	debugMsg("Adding files to the zip")
@@ -181,5 +228,68 @@ func main() {
 		}
 
 	}
+	//https://www.ribice.ba/go-corrupt-archive/
+	err = evidencezipwriter.Close()
+	if err != nil {
+		fmt.Println(err)
+	}
 
+	debugMsg("Done adding files to the zip")
+
+	if (sftpserver != "" && sftpuser != "") && ((sftppass != "") || (sftpkey != "")) {
+
+		debugMsg("Uploading files")
+
+		sshauth := []ssh.AuthMethod{}
+
+		if sftppass != "" {
+			sshauth = []ssh.AuthMethod{ssh.Password(sftppass)}
+		} else if sftpkey != "" {
+			//key auth method has been not been tested
+			//found somewhere on stackoverflow :D
+			key, err := ioutil.ReadFile(sftpkey)
+			if err != nil {
+				log.Fatalf("Unable to read private key: %v", err)
+			}
+			signer, err := ssh.ParsePrivateKey(key)
+
+			sshauth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+		}
+
+		config := &ssh.ClientConfig{
+			User:            sftpuser,
+			Auth:            sshauth,
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		}
+
+		server := fmt.Sprintf("%s:%s", sftpserver, sftpport)
+		conn, err := ssh.Dial("tcp", server, config)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer conn.Close()
+
+		sftp, err := sftp.NewClient(conn)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer sftp.Close()
+
+		dstFile, err := sftp.Create(evidencezip)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer dstFile.Close()
+
+		srcFile, err := os.Open(evidencezip)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = io.Copy(dstFile, srcFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		debugMsg("Done copying to sftp. Feel free to delete the zip")
+	}
 }
+
